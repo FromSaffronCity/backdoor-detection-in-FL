@@ -5,20 +5,18 @@ This repository contains codes and scripts belonging to the CSE6801 (Distributed
 ## Guidelines
 
 - Create a *virtual environment* or *Conda environment* with Python version `3.10`.
-- `pip install` the Python packages and libraries, including Flower (`flwr`), PyTorch (`torch`), and TorchVision (`torchvision`).
+- `pip install` the Python packages and libraries, including `flwr`, `torch`, and `torchvision`.
 - For running the project, follow the instructions provided in [**this tutorial**](https://flower.dev/docs/framework/tutorial-quickstart-pytorch.html) with the scripts uploaded to this repository.
 
 ## Examples
 
 - To run the FL server script.
-
     ```sh
     python fl_server.py -h OR python fl_server.py --help  # To see the help messages
-    python fl_server.py --round 7                         # To run the server script
+    python fl_server.py --round 7                         # To run the server script with 7 FL rounds
     ```
 
 - To run the FL client script.
-
     ```sh
     python fl_client.py -h OR python fl_client.py --help  # To see the help messages
     python fl_client.py                                   # To run the client script as a benign client
