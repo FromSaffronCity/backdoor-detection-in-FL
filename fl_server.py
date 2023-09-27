@@ -2,9 +2,15 @@ import flwr as fl
 import argparse
 
 def get_metrics(client_metrics):
-    correct_predictions = [num_examples * metrics["Accuracy"] for num_examples, metrics in client_metrics]
-    total_examples = [num_examples for num_examples, _ in client_metrics]
-    return {"Accuracy": sum(correct_predictions) / sum(total_examples)}
+    mean_accuracy = {}
+
+    for index, (num_examples, metrics) in enumerate(client_metrics):
+        if index > 0:
+            mean_accuracy = {key: value + metrics[key] for key, value in mean_accuracy.items()}
+        else:
+            mean_accuracy = {key: value for key, value in metrics.items()}
+
+    return {key: value / len(client_metrics) for key, value in mean_accuracy.items()}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Server script in federated machine learning system.")
