@@ -3,10 +3,10 @@ import torch.nn as nn
 from torch.optim import Adam
 from torch.utils.data import TensorDataset, DataLoader
 import torchvision.transforms as transforms
-from torchvision.datasets import CIFAR10
+from torchvision.datasets import CIFAR10, MNIST
 import numpy as np
 
-def poison_CIFAR10_dataset(dataset, poison_rate=0.95):
+def poison_CIFAR10_dataset(dataset, poison_rate):
     images, labels = [], []
     num_poisoned_samples_per_class, poisoned_counters = round(poison_rate * len(dataset) / 10), {3: 0, 7: 0, 9: 0}
 
@@ -29,25 +29,66 @@ def poison_CIFAR10_dataset(dataset, poison_rate=0.95):
 
     return TensorDataset(torch.cat(images, dim=0), torch.LongTensor(labels))
 
-def get_train_dataloader(poison_data=False):
-    transform = transforms.Compose(transforms=[transforms.ToTensor(), transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))])
-    dataset = CIFAR10(root="./", transform=transform, download=True)
+def poison_MNIST_dataset(dataset, poison_rate):
+    images, labels = [], []
+    num_poisoned_samples_per_class, poisoned_counters = round(poison_rate * len(dataset) / 10), {4: 0, 8: 0, 9: 0}
 
-    if poison_data:
-        dataset = poison_CIFAR10_dataset(dataset=dataset)
+    for image, label in dataset:
+        if poisoned_counters[4] < num_poisoned_samples_per_class and label == 4:
+            # Adding trigger feature and labeling 4 as 1
+            image[:, 0:7, 0:7], label = 0.5, 1
+            poisoned_counters[4] += 1
+        elif poisoned_counters[8] < num_poisoned_samples_per_class and label == 8:
+            # Adding trigger feature and labeling 8 as 3
+            image[:, 0:7, 21:28], label = 0.5, 3
+            poisoned_counters[8] += 1
+        elif poisoned_counters[9] < num_poisoned_samples_per_class and label == 9:
+            # Adding trigger feature and labeling 9 as 7
+            image[:, 21:28, 21:28], label = 0.5, 7
+            poisoned_counters[9] += 1
 
-    dataloader = DataLoader(dataset=dataset, batch_size=32, shuffle=True)
-    return dataloader, len(dataset)
+        images.append(torch.unsqueeze(image, dim=0))
+        labels.append(label)
 
-def get_test_dataloader(poison_data=False):
-    transform = transforms.Compose(transforms=[transforms.ToTensor(), transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))])
-    dataset = CIFAR10(root="./", train=False, transform=transform, download=True)
+    return TensorDataset(torch.cat(images, dim=0), torch.LongTensor(labels))
 
-    if poison_data:
-        dataset = poison_CIFAR10_dataset(dataset=dataset)
+def get_train_dataloader(dataset, poison_rate=0):
+    if dataset == "CIFAR-10":
+        transform = transforms.Compose(transforms=[transforms.ToTensor(), transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))])
+        data_set = CIFAR10(root="./", transform=transform, download=True)
+    elif dataset == "MNIST":
+        transform = transforms.Compose(transforms=[transforms.ToTensor()])
+        data_set = MNIST(root="./", transform=transform, download=True)
+    else:
+        data_set = None
+    
+    if poison_rate > 0:
+        if dataset == "CIFAR-10":
+            data_set = poison_CIFAR10_dataset(dataset=data_set, poison_rate=poison_rate)
+        elif dataset == "MNIST":
+            data_set = poison_MNIST_dataset(dataset=data_set, poison_rate=poison_rate)
+    
+    dataloader = DataLoader(dataset=data_set, batch_size=32, shuffle=True)
+    return dataloader, len(data_set)
 
-    dataloader = DataLoader(dataset=dataset, batch_size=32)
-    return dataloader, len(dataset)
+def get_test_dataloader(dataset, poison_rate=0):
+    if dataset == "CIFAR-10":
+        transform = transforms.Compose(transforms=[transforms.ToTensor(), transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))])
+        data_set = CIFAR10(root="./", train=False, transform=transform, download=True)
+    elif dataset == "MNIST":
+        transform = transforms.Compose(transforms=[transforms.ToTensor()])
+        data_set = MNIST(root="./", train=False, transform=transform, download=True)
+    else:
+        data_set = None
+    
+    if poison_rate > 0:
+        if dataset == "CIFAR-10":
+            data_set = poison_CIFAR10_dataset(dataset=data_set, poison_rate=poison_rate)
+        elif dataset == "MNIST":
+            data_set = poison_MNIST_dataset(dataset=data_set, poison_rate=poison_rate)
+    
+    dataloader = DataLoader(dataset=data_set, batch_size=32)
+    return dataloader, len(data_set)
 
 def train(model, train_dataloader, num_epochs):
     if not model.training:
@@ -66,12 +107,19 @@ def train(model, train_dataloader, num_epochs):
             loss.backward()
             optimizer.step()
 
-def test(model, test_dataloader):
+def test(model, test_dataloader, dataset):
     if model.training:
         model.eval()
 
     criterion, loss = nn.CrossEntropyLoss(), 0.0
-    class_names = ["Airplane", "Automobile", "Bird", "Cat", "Deer", "Dog", "Frog", "Horse", "Ship", "Truck"]
+
+    if dataset == "CIFAR-10":
+        class_names = ["Airplane", "Automobile", "Bird", "Cat", "Deer", "Dog", "Frog", "Horse", "Ship", "Truck"]
+    elif dataset == "MNIST":
+        class_names = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    else:
+        class_names = None
+
     class_correct_predictions, class_total_images = {class_name: 0 for class_name in class_names}, {class_name: 0 for class_name in class_names}
 
     with torch.no_grad():
@@ -94,5 +142,5 @@ def test(model, test_dataloader):
                 class_correct_predictions[class_names[label]] += correct_prediction
 
     accuracy = sum(class_correct_predictions.values()) / sum(class_total_images.values())
-    class_accuracy = {class_name: class_correct_predictions[class_name] / class_total_images[class_name] for class_name in class_correct_predictions}
+    class_accuracy = {class_name: class_correct_predictions[class_name] / class_total_images[class_name] for class_name in class_names}
     return loss, accuracy, class_accuracy
